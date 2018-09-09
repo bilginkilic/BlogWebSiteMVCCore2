@@ -2,33 +2,108 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.IO;
+using ExploreCalifornia.Models;
+using ExploreCalifornia;
 
-namespace BlogWebSiteMVCCore2
+namespace ExploreCaliforna
 {
     public class Startup
     {
+        public readonly IConfigurationRoot configuration;
+
+        public Startup(IHostingEnvironment env)
+        {
+            configuration = new ConfigurationBuilder().
+                AddEnvironmentVariables()
+               .AddJsonFile(env.ContentRootPath + "/config.json")
+               .AddJsonFile(env.ContentRootPath + "/config.dev.json", true)
+                .Build();
+
+            //     var host = new WebHostBuilder()
+            //.UseContentRoot(Directory.GetCurrentDirectory())
+            //.UseKestrel()
+            //.UseIISIntegration() // Necessary for Azure.
+            //.UseStartup<Program>()
+            //.Build();
+
+            //     host.Run();
+        }
+
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
+
+            services.AddTransient<SpecialsDataContext>();
+
+            services.AddTransient<FormattingService>();
+
+            services.AddTransient<FeatureToggles>(x => new FeatureToggles
+            {
+                EnableDeveloperExceptions =
+                    configuration.GetValue<bool>("FeatureToggles:EnableDeveloperExceptions")
+            });
+
+            services.AddDbContext<BlogDataContext>(options =>
+            {
+                var connectionString = configuration.GetConnectionString("BlogDataContext");
+                options.UseSqlServer(connectionString);
+            });
+
+            services.AddDbContext<IdentityDataContext>(options =>
+            {
+                var connectionString = configuration.GetConnectionString("IdentityDataContext");
+                options.UseSqlServer(connectionString);
+            });
+
+            services.AddIdentity<IdentityUser, IdentityRole>()
+                .AddEntityFrameworkStores<IdentityDataContext>();
+
+            services.AddMvc();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IHostingEnvironment env)
-        {
-            if (env.IsDevelopment())
-            {
-                app.UseDeveloperExceptionPage();
-            }
 
-            app.Run(async (context) =>
+        {
+           // loggerFactory.AddConsole();
+
+            //app.UseExceptionHandler("/error.html");
+
+            //if (features.EnableDeveloperExceptions)
+            //{
+            //    app.UseDeveloperExceptionPage();
+            //}
+
+            app.Use(async (context, next) =>
+                    {
+                        if (context.Request.Path.Value.Contains("invalid"))
+                            throw new Exception("ERROR!");
+
+                        await next();
+                    });
+
+            app.UseAuthentication();
+
+            app.UseMvc(routes =>
             {
-                await context.Response.WriteAsync("Hello World!");
+                routes.MapRoute("Default",
+                    "{controller=Home}/{action=Index}/{id?}"
+                );
             });
+
+            app.UseFileServer();
+
+
         }
     }
 }
